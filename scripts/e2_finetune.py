@@ -66,9 +66,12 @@ def train_one(model_key, lr, seed, out_dir: Path, epochs=EPOCHS, limit=None, wor
                llrd=LLRD.get(model_key), label_smoothing=0.1, class_weights=CLASS_WEIGHTS,
                amp=str(autocast(dev)[1]), device=str(dev), limit=limit,
                gpu=torch.cuda.get_device_name() if dev.type == "cuda" else None)
-    (out_dir / "config.yaml").write_text(yaml.safe_dump(cfg))
-    summary = fit(model, train_dl, val_dl, out_dir, lambda z, y, x: crit(z, y), opt, dev,
-                  epochs=epochs, warmup_epochs=WARMUP, patience=PATIENCE, accum=accum)
+    if (out_dir / "summary.json").exists():  # trained in an earlier session; only predictions are missing
+        summary = load_json(out_dir / "summary.json")
+    else:
+        (out_dir / "config.yaml").write_text(yaml.safe_dump(cfg))
+        summary = fit(model, train_dl, val_dl, out_dir, lambda z, y, x: crit(z, y), opt, dev,
+                      epochs=epochs, warmup_epochs=WARMUP, patience=PATIENCE, accum=accum, resume_tag=f"lr{lr:g}")
 
     model.load_state_dict(torch.load(out_dir / "model.pt", map_location=dev))
     for split in ["valA", "valB"]:

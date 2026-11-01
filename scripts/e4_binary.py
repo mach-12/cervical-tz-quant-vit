@@ -109,9 +109,10 @@ def binatt(workers):
         model="BinaryAttention DeiT-S", init=teacher_run, parent=teacher_run, teacher=teacher_run, attn_quant=True, attn_bias=True,
         pv_quant=True, lr=lr, min_lr=min_lr, weight_decay=wd, distillation="hard", alpha=alpha, epochs=30,
         patience=7, warmup=5, time_cap_h=3)))
-    train_dl, val_dl = loaders(workers)
-    fit(model, train_dl, val_dl, out, loss_fn, opt, dev, epochs=30, warmup_epochs=5, patience=7,
-        min_lr_ratio=min_lr / lr, time_cap_h=3)
+    if not (out / "summary.json").exists():
+        train_dl, val_dl = loaders(workers)
+        fit(model, train_dl, val_dl, out, loss_fn, opt, dev, epochs=30, warmup_epochs=5, patience=7,
+            min_lr_ratio=min_lr / lr, time_cap_h=3, resume_tag=f"lr{lr:g}")
     finish(model, out, dev, workers, attn_bits=1)
 
 
@@ -152,7 +153,7 @@ def bhvit_fp(workers, lrs=(1e-4, 3e-4)):
                                                              lr=lr, load=load_info, recipe="E2")))
         train_dl, val_dl = loaders(workers)
         scores[lr] = fit(model, train_dl, val_dl, out, lambda z, y, x: ce(z, y), opt, dev,
-                         epochs=30, warmup_epochs=2, patience=7)["best_valA_auroc"]
+                         epochs=30, warmup_epochs=2, patience=7, resume_tag=f"lr{lr:g}")["best_valA_auroc"]
     chosen = max(scores, key=scores.get)
     save_json(RUNS_DIR / "lrsearch" / "E4_bhvit_tiny_fp_selected.json", dict(scores=scores, chosen=chosen))
     src = RUNS_DIR / "lrsearch" / f"E4_bhvit_tiny_fp_fp32_s0_lr{chosen:g}"
@@ -175,7 +176,14 @@ def bhvit_bin(workers, lr=1e-4):
     reg_keys = ("cov1.weight", "cov2.weight", "cov3.weight", "dense.weight", "query.weight", "key.weight",
                 "value.weight")
     for attempt, cur_lr in enumerate([lr, 0.3 * lr]):
+        done = out / f"summary_attempt{attempt}.json"
+        if done.exists() and load_json(done)["status"] == "aborted":
+            continue  # stop rule already hit at this lr in an earlier session
         seed_all(0)
+        if done.exists():  # trained in an earlier session; only predictions are missing
+            model, _ = bhvit(1, False, "best64.0.pth", dev)
+            finish(model, out, dev, workers)
+            return
         model, load_info = bhvit(1, False, "best64.0.pth", dev)
         reg_params = [p for n, p in model.named_parameters() if any(k in n for k in reg_keys)]
 
@@ -195,7 +203,8 @@ def bhvit_bin(workers, lr=1e-4):
             attempt=attempt, epochs=100, patience=15, time_cap_h=3, load=load_info)))
         train_dl, val_dl = loaders(workers)
         s = fit(model, train_dl, val_dl, out, loss_fn, opt, dev, epochs=100, warmup_epochs=0, patience=15,
-                time_cap_h=3, abort_rule=(10, 0.60))
+                time_cap_h=3, abort_rule=(10, 0.60), resume_tag=f"lr{cur_lr:g}")
+        save_json(done, s)
         if s["status"] != "aborted":
             finish(model, out, dev, workers)
             return

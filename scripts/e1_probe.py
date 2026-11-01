@@ -17,7 +17,7 @@ from sklearn.metrics import log_loss  # noqa: E402
 from sklearn.preprocessing import StandardScaler  # noqa: E402
 
 from tzq.config import CLASS_WEIGHTS, FEATURES_DIR, RUNS_DIR, SPLITS  # noqa: E402
-from tzq.data import RAW_DIR, eval_transform, load_split, make_loader  # noqa: E402
+from tzq.data import RAW_DIR, download, eval_transform, load_split, make_loader  # noqa: E402
 from tzq.metrics import t1_auroc, tz3_score  # noqa: E402
 from tzq.models import FeatureExtractor  # noqa: E402
 from tzq.utils import autocast, device, save_json, write_preds  # noqa: E402
@@ -40,6 +40,8 @@ def extract(probe, workers):
         return
     out.mkdir(parents=True, exist_ok=True)
     if probe == "hsv":
+        if not RAW_DIR.exists():  # histograms use the original crops, not the padded cache
+            download()
         for s in SPLITS:
             np.save(out / f"{s}.npy", np.stack([hsv_hist(RAW_DIR / p) for p in load_split(s).path]))
         return

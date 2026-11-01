@@ -104,7 +104,7 @@ Type_1_0001,test,0,2.41,0.37,-1.12
 - **Evaluation:** resize the square crop to the model's native size R (224 px; MedSigLIP 448 px; MobileNetV4 as in its timm config), bicubic, no centre crop, normalized with the checkpoint's own mean and std.
 - **Training augmentation (E2, E4):** `RandomResizedCrop(R, scale=(0.7, 1.0), ratio=(0.9, 1.1))`, horizontal flip (p = 0.5), rotation ±15°, `ColorJitter(0.2, 0.2, 0.1, 0.02)`. No mixup or cutmix.
 
-**Rules:** select on Val-A only; open Test once per final model and log the time; 3 seeds (0, 1, 2) for the four quantization parents, 1 seed elsewhere. *Implementation:* every Test prediction file written appends a line to `analysis/test_access_log.csv` (run ID, UTC time, host).
+**Rules:** select on Val-A only; open Test once per final model and log the time; 3 seeds (0, 1, 2) for the four quantization parents, 1 seed elsewhere. *Implementation:* every Test prediction file written appends a line to `analysis/test_access_log.csv` (run ID, UTC time, host). Training state is checkpointed after every epoch (`last.pt`), so a run interrupted by a Colab disconnect resumes from its last finished epoch; the mini-batch order after resuming differs from an uninterrupted run, which is recorded as a source of non-bit-exact reproducibility.
 
 ## Models
 
