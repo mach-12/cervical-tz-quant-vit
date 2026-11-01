@@ -1,5 +1,8 @@
 """E3b: real INT8 (QDQ, per-channel, static MinMax calibration on 256 Train images) with ONNX Runtime.
 
+If Val-A AUROC drops by more than 0.02, Percentile calibration, then INT8 on linear layers only (static),
+then dynamic INT8 on linear layers are tried; cost.json records every attempt and the one used.
+
     python scripts/e3b_onnx_int8.py --models deit_s mnv4_m tinyvit_11m dinov3_b
 Latency (batch 1, 4 threads, 50 warm-up, median of 200) is measured for seed 0, FP32 and INT8,
 on whatever machine runs this script; its CPU is recorded.
@@ -18,16 +21,40 @@ import numpy as np  # noqa: E402
 import onnxruntime as ort  # noqa: E402
 import torch  # noqa: E402
 from onnxruntime.quantization import (CalibrationDataReader, CalibrationMethod, QuantFormat,  # noqa: E402
-                                      QuantType, quantize_static)
+                                      QuantType, quantize_dynamic, quantize_static)
 from onnxruntime.quantization.shape_inference import quant_pre_process  # noqa: E402
 
 from tzq.config import QUANT_DIR, QUANT_PARENTS, RUNS_DIR  # noqa: E402
 from tzq.data import CervixDataset, eval_transform, make_loader  # noqa: E402
 from tzq.metrics import t1_auroc, tz3_score  # noqa: E402
 from tzq.models import build_classifier  # noqa: E402
-from tzq.utils import finished, logits_of, read_preds, save_json, stale, write_preds  # noqa: E402
+from tzq.utils import finished, load_json, logits_of, read_preds, save_json, stale, write_preds  # noqa: E402
 
 N_CALIB, MAX_DROP = 256, 0.02
+# Tried in order until the Val-A AUROC drop is <= MAX_DROP. ViTs with large activation outliers (DINOv3) collapse
+# when every op is quantized, so the fallbacks keep LayerNorm, softmax and residual adds in float.
+LINEAR_OPS = ["MatMul", "Gemm", "Conv"]
+ATTEMPTS = ["MinMax", "Percentile", "MinMax_linear_only", "dynamic_linear_only"]
+
+
+def degraded(out):
+    """An earlier run whose INT8 model lost more than MAX_DROP before the fallbacks existed."""
+    if not (out / "cost.json").exists():
+        return False
+    info = load_json(out / "cost.json")
+    return (info["parent_valA_auroc"] - max(info["calibration"].values()) > MAX_DROP
+            and "dynamic_linear_only" not in info["calibration"])
+
+
+def quantize(pre, q, attempt, tf):
+    if attempt == "dynamic_linear_only":
+        quantize_dynamic(str(pre), str(q), weight_type=QuantType.QInt8, per_channel=True,
+                         op_types_to_quantize=["MatMul", "Gemm"])
+        return
+    method = CalibrationMethod.Percentile if attempt == "Percentile" else CalibrationMethod.MinMax
+    quantize_static(str(pre), str(q), Reader(tf), quant_format=QuantFormat.QDQ, per_channel=True,
+                    weight_type=QuantType.QInt8, activation_type=QuantType.QInt8, calibrate_method=method,
+                    op_types_to_quantize=LINEAR_OPS if attempt.endswith("linear_only") else None)
 
 
 def cpu_name():
@@ -101,7 +128,7 @@ def one(key, seed, measure_latency):
     if not finished(parent):
         print("parent not finished, skipped:", parent.name)
         return
-    if (out / "preds_test.csv").exists() and not stale(out / "preds_test.csv", parent):
+    if (out / "preds_test.csv").exists() and not stale(out / "preds_test.csv", parent) and not degraded(out):
         return  # done, from the parent's final checkpoint
     out.mkdir(parents=True, exist_ok=True)
     model, size, mean, std = build_classifier(key, pretrained=False)
@@ -117,14 +144,17 @@ def one(key, seed, measure_latency):
     parent_auc = t1_auroc(pa.label, tz3_score(logits_of(pa)))
 
     tried = {}
-    for method in [CalibrationMethod.MinMax, CalibrationMethod.Percentile]:
-        q = out / f"int8_{method.name.lower()}.onnx"
-        quantize_static(str(pre), str(q), Reader(tf), quant_format=QuantFormat.QDQ, per_channel=True,
-                        weight_type=QuantType.QInt8, activation_type=QuantType.QInt8, calibrate_method=method)
-        z, y = run_onnx(session(q), "valA", tf)
-        tried[method.name] = dict(path=q, auc=t1_auroc(y, tz3_score(z)), z=z)
-        print(f"{out.name} {method.name}: valA AUROC {tried[method.name]['auc']:.4f} (parent {parent_auc:.4f})")
-        if parent_auc - tried[method.name]["auc"] <= MAX_DROP:
+    for attempt in ATTEMPTS:
+        q = out / f"int8_{attempt.lower()}.onnx"
+        try:
+            quantize(pre, q, attempt, tf)
+            z, y = run_onnx(session(q), "valA", tf)
+        except Exception as e:  # a fallback that does not apply to this graph is skipped, not fatal
+            print(f"{out.name} {attempt}: failed ({type(e).__name__}: {str(e)[:120]})", flush=True)
+            continue
+        tried[attempt] = dict(path=q, auc=t1_auroc(y, tz3_score(z)), z=z)
+        print(f"{out.name} {attempt}: valA AUROC {tried[attempt]['auc']:.4f} (parent {parent_auc:.4f})", flush=True)
+        if parent_auc - tried[attempt]["auc"] <= MAX_DROP:
             break
     best = max(tried.values(), key=lambda r: r["auc"])
     int8 = out / "int8.onnx"

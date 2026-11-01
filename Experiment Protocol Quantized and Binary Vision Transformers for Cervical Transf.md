@@ -184,7 +184,7 @@ E3 compresses the four parents (R2–R5, all three seeds) without retraining: a 
 
 **E3b. Real INT8 with ONNX Runtime**
 
-1. Export to ONNX (opset 17, dynamic batch). *Implementation:* TorchScript exporter first, `torch.export` (dynamo) exporter as fallback; `quant_pre_process` (shape inference) before quantization.
+1. Export to ONNX (opset 17, dynamic batch). *Implementation:* TorchScript exporter first, `torch.export` (dynamo) exporter as fallback; `quant_pre_process` (shape inference) before quantization. *Implementation (fallbacks, added after DINOv3-B collapsed to Val-A AUROC 0.52 with every op quantized):* if MinMax and Percentile both lose more than 0.02 Val-A AUROC, static INT8 is restricted to linear layers (MatMul/Gemm/Conv; LayerNorm, softmax and residual adds stay in float), then dynamic INT8 on MatMul/Gemm is tried; `cost.json` records every attempt and the one used, and the table labels the variant accordingly.
 2. `onnxruntime.quantization.quantize_static`: `QuantFormat.QDQ`, `per_channel=True`, INT8 weights and activations, MinMax calibration on 256 Train images (seed 0).
 3. If Val-A T1 AUROC drops by more than 0.02, redo with percentile calibration and keep the better.
 4. Models: R2, R4, R5; try R3 and record it if export fails.
