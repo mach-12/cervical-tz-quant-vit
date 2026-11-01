@@ -1,11 +1,7 @@
-"""E4: binary models. Each subcommand runs in its own process, because both repos ship
-top-level modules named `models` and `utils`.
+"""E4: binarized attention (B1, BinaryAttention on the fine-tuned DeiT-S parent).
 
-    python scripts/e4_binary.py binatt        # B1: BinaryAttention on fine-tuned DeiT-S (R2), 3 h cap
-    python scripts/e4_binary.py bhvit_fp      # B3: BHViT-Tiny 32/32, E2 recipe, LR in {1e-4, 3e-4}
-    python scripts/e4_binary.py bhvit_bin     # B2: BHViT-Tiny 1/1, KD from R3, 3 h cap + stop rule
-Needs external/BinaryAttention, external/BHViT and external/ckpt/bhvit_tiny/BHViT-tiny/*.pth
-(see notebooks/colab_driver.ipynb).
+    python scripts/e4_binary.py binatt        # 3 h cap
+Needs external/BinaryAttention (see notebooks/colab_driver.ipynb). BHViT (B2, B3) was removed from the study.
 """
 import argparse
 import importlib
@@ -28,7 +24,6 @@ from tzq.train import fit  # noqa: E402
 from tzq.utils import device, load_json, predict_logits, save_json, seed_all, write_preds  # noqa: E402
 
 EXT = ROOT / "external"
-BHVIT_CKPT = EXT / "ckpt" / "bhvit_tiny" / "BHViT-tiny"
 MEAN, STD, SIZE = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225), 224
 
 
@@ -46,17 +41,6 @@ def frozen_teacher(model_key, dev):
     for p in model.parameters():
         p.requires_grad_(False)
     return model, run.name
-
-
-class LogitsOnly(nn.Module):
-    """BHViT returns an ImageClassifierOutput; the rest of the pipeline expects a logits tensor."""
-
-    def __init__(self, net):
-        super().__init__()
-        self.net = net
-
-    def forward(self, x):
-        return self.net(pixel_values=x, return_dict=True).logits
 
 
 def weighted_ce():
@@ -116,105 +100,9 @@ def binatt(workers):
     finish(model, out, dev, workers, attn_bits=1)
 
 
-# ----------------------------------------------------------------------------- BHViT
-
-def bhvit(bits, some_fp, ckpt, dev):
-    sys.path.insert(0, str(EXT / "BHViT"))
-    torch.serialization.add_safe_globals([argparse.Namespace])
-    ck = torch.load(BHVIT_CKPT / ckpt, map_location="cpu", weights_only=True)
-    args = ck["args"]
-    args.nb_classes, args.some_fp, args.drop_path = 1000, some_fp, 0.0
-    get_model = importlib.import_module("models").get_model
-    net = get_model(args, str(EXT / "BHViT" / "configs" / "BHViT_tiny"), "dbhvit", bits, bits)
-    res = net.load_state_dict(ck["model"], strict=False)
-    net.classifier = nn.Linear(net.classifier.in_features, 3)
-    return LogitsOnly(net).to(dev), dict(missing=res.missing_keys, unexpected=res.unexpected_keys)
-
-
-def bhvit_fp(workers, lrs=(1e-4, 3e-4)):
-    """B3. The repo publishes no 32-bit BHViT; this is the BHViT-Tiny architecture at 32/32,
-    initialised from the latent weights of the "somefp 66.0" checkpoint, fine-tuned with the E2 recipe."""
-    final = RUNS_DIR / "E4_bhvit_tiny_fp_fp32_s0"
-    if (final / "preds_test.csv").exists():
-        return
-    dev = device()
-    scores = {}
-    for lr in lrs:
-        out = RUNS_DIR / "lrsearch" / f"E4_bhvit_tiny_fp_fp32_s0_lr{lr:g}"
-        if (out / "summary.json").exists():
-            scores[lr] = load_json(out / "summary.json")["best_valA_auroc"]
-            continue
-        seed_all(0)
-        model, load_info = bhvit(32, True, "best66.0r.pth", dev)
-        opt = torch.optim.AdamW(param_groups_weight_decay(model, 0.05), lr=lr, betas=(0.9, 0.999))
-        ce = weighted_ce().to(dev)
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "config.yaml").write_text(yaml.safe_dump(dict(model="BHViT-Tiny 32/32", init="best66.0r.pth",
-                                                             lr=lr, load=load_info, recipe="E2")))
-        train_dl, val_dl = loaders(workers)
-        scores[lr] = fit(model, train_dl, val_dl, out, lambda z, y, x: ce(z, y), opt, dev,
-                         epochs=30, warmup_epochs=2, patience=7, resume_tag=f"lr{lr:g}")["best_valA_auroc"]
-    chosen = max(scores, key=scores.get)
-    save_json(RUNS_DIR / "lrsearch" / "E4_bhvit_tiny_fp_selected.json", dict(scores=scores, chosen=chosen))
-    src = RUNS_DIR / "lrsearch" / f"E4_bhvit_tiny_fp_fp32_s0_lr{chosen:g}"
-    final.mkdir(parents=True, exist_ok=True)
-    for f in ("model.pt", "config.yaml", "summary.json"):
-        (final / f).write_bytes((src / f).read_bytes())
-    model, _ = bhvit(32, True, "best66.0r.pth", dev)
-    finish(model, final, dev, workers)
-
-
-def bhvit_bin(workers, lr=1e-4):
-    """B2: 0.5 weighted CE + 0.5 T^2 KL to R3 (T = 4) + the repo's 0.1 x oscillation regularisation."""
-    out = RUNS_DIR / "E4_bhvit_tiny_bin_bin_s0"
-    if (out / "preds_test.csv").exists():
-        return
-    dev = device()
-    teacher, teacher_run = frozen_teacher("dinov3_b", dev)
-    T, reg_w = 4.0, 0.1
-    ce = weighted_ce().to(dev)
-    reg_keys = ("cov1.weight", "cov2.weight", "cov3.weight", "dense.weight", "query.weight", "key.weight",
-                "value.weight")
-    for attempt, cur_lr in enumerate([lr, 0.3 * lr]):
-        done = out / f"summary_attempt{attempt}.json"
-        if done.exists() and load_json(done)["status"] == "aborted":
-            continue  # stop rule already hit at this lr in an earlier session
-        seed_all(0)
-        if done.exists():  # trained in an earlier session; only predictions are missing
-            model, _ = bhvit(1, False, "best64.0.pth", dev)
-            finish(model, out, dev, workers)
-            return
-        model, load_info = bhvit(1, False, "best64.0.pth", dev)
-        reg_params = [p for n, p in model.named_parameters() if any(k in n for k in reg_keys)]
-
-        def loss_fn(z, y, x):
-            with torch.no_grad():
-                t = teacher(x).float()
-            kd = F.kl_div(F.log_softmax(z / T, 1), F.log_softmax(t / T, 1), reduction="batchmean",
-                          log_target=True) * T * T
-            reg = torch.stack([(p.abs() - 1).abs().mean() for p in reg_params]).mean()
-            return 0.5 * ce(z, y) + 0.5 * kd + reg_w * reg
-
-        # Repo settings: AdamW, no weight decay, cosine, no warm-up.
-        opt = torch.optim.AdamW(model.parameters(), lr=cur_lr, weight_decay=0.0)
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "config.yaml").write_text(yaml.safe_dump(dict(
-            model="BHViT-Tiny 1/1", init="best64.0.pth", parent="E4_bhvit_tiny_fp_fp32_s0", teacher=teacher_run, kd_T=T, reg_weight=reg_w, lr=cur_lr,
-            attempt=attempt, epochs=100, patience=15, time_cap_h=3, load=load_info)))
-        train_dl, val_dl = loaders(workers)
-        s = fit(model, train_dl, val_dl, out, loss_fn, opt, dev, epochs=100, warmup_epochs=0, patience=15,
-                time_cap_h=3, abort_rule=(10, 0.60), resume_tag=f"lr{cur_lr:g}")
-        save_json(done, s)
-        if s["status"] != "aborted":
-            finish(model, out, dev, workers)
-            return
-        print(f"B2 stop rule hit at lr {cur_lr:g}")
-    (out / "FAILED.txt").write_text("Val-A T1 AUROC < 0.60 after 10 epochs at lr and 0.3x lr; reported as a failure.\n")
-
-
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("which", choices=["binatt", "bhvit_fp", "bhvit_bin"])
+    ap.add_argument("which", choices=["binatt"])
     ap.add_argument("--workers", type=int, default=4)
     a = ap.parse_args()
-    {"binatt": binatt, "bhvit_fp": bhvit_fp, "bhvit_bin": bhvit_bin}[a.which](a.workers)
+    {"binatt": binatt}[a.which](a.workers)

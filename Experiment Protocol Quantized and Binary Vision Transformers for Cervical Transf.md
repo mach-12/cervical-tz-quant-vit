@@ -192,6 +192,8 @@ E3 compresses the four parents (R2–R5, all three seeds) without retraining: a 
 
 ## E4: Binary models
 
+**Removed on 2026-11-01: BHViT (B2, B3).** Dropped before it was run, to keep the study on compressed copies of the same parents (for which inheriting the parent's temperature and threshold is well defined); BHViT is a separate architecture with its own checkpoint. Only B1 (BinaryAttention on the DeiT-S parent) remains. The B2/B3 text below is kept as the original plan.
+
 E4 trains the 1-bit end of the comparison: BinaryAttention on DeiT-S and a fully binary BHViT-Tiny, each with a 3-hour cap and a stop rule.
 
 **B1. BinaryAttention (3 h cap)**

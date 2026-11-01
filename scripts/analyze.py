@@ -33,7 +33,6 @@ NAMES = {
     "medsiglip": ("P3", "MedSigLIP probe"), "resnet50": ("R1", "ResNet-50"), "deit_s": ("R2", "DeiT-S"),
     "dinov3_b": ("R3", "DINOv3-B fine-tuned"), "mnv4_m": ("R4", "MobileNetV4-Conv-M"),
     "tinyvit_11m": ("R5", "TinyViT-11M"), "binatt_deit_s": ("B1", "BinaryAttention (DeiT-S)"),
-    "bhvit_tiny_fp": ("B3", "BHViT-Tiny"), "bhvit_tiny_bin": ("B2", "BHViT-Tiny"),
     "dinov3_b_cont": ("R3-C", "DINOv3-B, continued (control)"), "dinov3_b_ord": ("R3-O", "DINOv3-B + ordinal head"),
     "dinov3_b_ord448": ("R3-O448", "DINOv3-B + ordinal, 448 px"),
 }
@@ -202,8 +201,7 @@ TABLE1_ORDER = [("E1", "hsv", "fp32"), ("E1", "dinov2_b", "fp32"), ("E1", "dinov
                 ("E2", "dinov3_b_cont", "fp32"), ("E2", "dinov3_b_ord", "fp32"), ("E3b", "dinov3_b_ord", "int8"),
                 ("E2", "dinov3_b_ord448", "fp32"),
                 ("E2", "mnv4_m", "fp32"), ("E3b", "mnv4_m", "int8"), ("E2", "tinyvit_11m", "fp32"),
-                ("E3b", "tinyvit_11m", "int8"), ("E4", "binatt_deit_s", "qk1"), ("E4", "bhvit_tiny_fp", "fp32"),
-                ("E4", "bhvit_tiny_bin", "bin")]
+                ("E3b", "tinyvit_11m", "int8"), ("E4", "binatt_deit_s", "qk1")]
 
 
 def write_table1(summary):
@@ -264,7 +262,7 @@ def fig1(summary):
         r = summary[(summary.exp == "E3b") & (summary.model == model)]
         if not r.empty:
             ax.plot([8], [r.iloc[0].auroc], marker="s", mfc="none", color=line[0].get_color(), ms=5)
-    for model, mk in [("binatt_deit_s", "^"), ("bhvit_tiny_bin", "*")]:
+    for model, mk in [("binatt_deit_s", "^")]:
         r = summary[(summary.exp == "E4") & (summary.model == model)]
         if not r.empty:
             ax.plot([1], [r.iloc[0].auroc], marker=mk, color="k", ms=6, ls="none", label=NAMES[model][1])

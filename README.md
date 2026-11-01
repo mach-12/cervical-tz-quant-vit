@@ -13,7 +13,7 @@ Code for the protocol in `Experiment Protocol Quantized and Binary Vision Transf
 | `scripts/e2_finetune.py` | E2: fine-tuning R1–R5 (LR search on seed 0, then seeds 1–2, then Test once) |
 | `scripts/e3a_weight_sweep.py` | E3a: simulated 8/4/2/1-bit weight quantization |
 | `scripts/e3b_onnx_int8.py` | E3b: ONNX Runtime INT8 (QDQ, per-channel, static), size and CPU latency |
-| `scripts/e4_binary.py` | E4: BinaryAttention (B1), BHViT-Tiny 32/32 (B3) and 1/1 (B2) |
+| `scripts/e4_binary.py` | E4: BinaryAttention on the DeiT-S parent (B1) |
 | `scripts/cost_fp.py` | GMACs of the full-precision models |
 | `scripts/analyze.py` | E5 (temperature, conformal threshold, inherited vs. recalibrated) and every table and figure |
 | `scripts/explain.py` | Post-hoc explainability: Grad-CAM of p(TZ3), deletion faithfulness, map stability under E3a quantization (`explain/`) |
@@ -31,8 +31,6 @@ python scripts/e2_finetune.py --model dinov3_b      # then deit_s, tinyvit_11m, 
 python scripts/e3a_weight_sweep.py
 python scripts/e3b_onnx_int8.py                     # CPU; latency is measured on this machine
 python scripts/e4_binary.py binatt
-python scripts/e4_binary.py bhvit_fp
-python scripts/e4_binary.py bhvit_bin               # teacher = best R3 seed
 python scripts/cost_fp.py
 python scripts/analyze.py
 python scripts/explain.py                           # after E2/E3a; Val-B by default

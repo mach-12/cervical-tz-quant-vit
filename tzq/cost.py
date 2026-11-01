@@ -36,7 +36,7 @@ def estimate_cost(model: nn.Module, size: int, attn_qk_bits: int = 32):
     for name, m in model.named_modules():
         if isinstance(m, (nn.Linear, nn.Conv2d)):
             hooks.append(m.register_forward_hook(linear_conv))
-        elif type(m).__name__ in ("Attention", "BHViTSelfAttention"):
+        elif type(m).__name__ == "Attention":
             hooks.append(m.register_forward_hook(attention))
     was_training = model.training
     model.eval()
