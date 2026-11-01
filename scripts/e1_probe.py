@@ -92,5 +92,8 @@ if __name__ == "__main__":
     ap.add_argument("--workers", type=int, default=4)
     a = ap.parse_args()
     for p in a.probe:
+        if (RUNS_DIR / f"E1_{p}_fp32_s0" / "preds_test.csv").exists():  # Test is opened once per model
+            print("done already:", p)
+            continue
         extract(p, a.workers)
         fit_probe(p)
