@@ -251,14 +251,18 @@ def fig2(summary, alpha=0.10):
         if not pts:
             continue
         x = [p[0] for p in pts]
-        inh = [p[1].get(f"missed_{alpha}_inh", p[1][f"missed_{alpha}_recal"]) for p in pts]
         rec = [p[1][f"missed_{alpha}_recal"] for p in pts]
-        ln = ax.plot(x, inh, marker="o", ms=3, lw=1, label=f"{NAMES[model][1]} inherited")
+        # The 32-bit parent has nothing to inherit: both regimes start from its own value.
+        inh = [r if pd.isna(p[1].get(f"missed_{alpha}_inh", np.nan)) else p[1][f"missed_{alpha}_inh"]
+               for p, r in zip(pts, rec)]
+        ln = ax.plot(x, inh, marker="o", ms=3, lw=1, label=NAMES[model][1])
         ax.plot(x, rec, marker="o", ms=3, lw=1, ls="--", color=ln[0].get_color(), mfc="none")
+    ax.plot([], [], "k-", lw=1, label="inherited T, τ")
+    ax.plot([], [], "k--", lw=1, label="recalibrated")
     ax.axhline(alpha, color="k", lw=0.8, ls=":")
     ax.set_xscale("log", base=2)
     ax.set_xticks([1, 2, 4, 8, 32], ["1", "2", "4", "8", "32"])
-    ax.set_xlabel("Weight bit width (solid: inherited, dashed: recalibrated)")
+    ax.set_xlabel("Weight bit width")
     ax.set_ylabel("Missed-TZ3 rate (Test)")
     ax.legend(fontsize=5, frameon=False)
     ax.grid(alpha=0.3)
