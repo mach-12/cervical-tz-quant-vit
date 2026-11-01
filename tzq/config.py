@@ -9,6 +9,7 @@ FEATURES_DIR = ROOT / "features"
 RUNS_DIR = ROOT / "runs"
 QUANT_DIR = ROOT / "quant"
 ANALYSIS_DIR = ROOT / "analysis"
+EXPLAIN_DIR = ROOT / "explain"
 
 HF_DATASET = "mach-12/cervical_cancer_classification"
 CLASSES = ["Type_1", "Type_2", "Type_3"]  # -> 0, 1, 2

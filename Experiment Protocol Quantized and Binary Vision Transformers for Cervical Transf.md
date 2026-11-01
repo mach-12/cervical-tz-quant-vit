@@ -240,6 +240,17 @@ P(\text{eligible} \mid \text{TZ3}) = P(s_{\text{new}} < s_{(k)}) \le \frac{k}{m+
 
 **Expected pattern to test:** the inherited regime misses more TZ3 cases as bit width falls, and recalibration brings the miss rate back under α at some cost in eligibility. If that holds, the conclusion is that compressed models must be recalibrated, not only re-validated for accuracy.
 
+## Explainability (post hoc, added after the protocol was fixed)
+
+Added on 2026-11-01. Explanations are computed from saved models only; they change no training, selection or threshold, and no Test prediction. *Implementation (`scripts/explain.py`, outputs in `explain/`):*
+
+- **Models:** R1–R5 full precision, every seed; for the four quantization parents also the E3a 8/4/2/1-bit weight variants, rebuilt from the parent's `model.pt` exactly as in E3a. E4 binary models are not covered (their code is third-party).
+- **Split:** Val-B by default (no Test access). If run on Test, each opening is logged in `analysis/test_access_log.csv`.
+- **Map:** Grad-CAM of log p(TZ3), the score behind the referral decision. CNNs and TinyViT use the last feature map (`forward_features`); DeiT-S and DINOv3-B use the patch tokens entering the last block (`blocks[-1].norm1`), with prefix tokens (CLS, registers) dropped. ReLU, then scaled to [0, 1] per image. Computed in fp32.
+- **Faithfulness (deletion):** 16 px blocks are set to the normalisation mean (0 after normalisation) from the most to the least salient, in 11 steps (0, 10, …, 100 %), recording p(TZ3); AUC of that curve on true-TZ3 images, compared with a random block order (seed 0). Ratio < 1 means the map finds evidence the model uses.
+- **Stability under quantization:** per image, Spearman rank correlation and top-20 % IoU between the quantized and full-precision maps (same seed, native map grid), plus agreement of the predicted class.
+- **Figures:** `panels/cases_<model>.png` (seed 0, FP32: detected TZ3, missed TZ3, false alarms, at the Val-A specificity-0.80 cut on tempered scores); `panels/models.png` (9 fixed images, 3 per class drawn with seed 0, across R1–R5); `panels/quant_<model>.png` (the same images across bit widths); `fig_stability.png` (Spearman and deletion ratio vs. bits, mean ± SD over seeds); `table_explain.md`, `summary.csv`.
+
 ## Metrics and statistics
 
 Six accuracy and calibration metrics, three cost measures, and stratified bootstrap CIs on the 852 test images; thresholds come only from Val-A or Val-B.

@@ -16,6 +16,7 @@ Code for the protocol in `Experiment Protocol Quantized and Binary Vision Transf
 | `scripts/e4_binary.py` | E4: BinaryAttention (B1), BHViT-Tiny 32/32 (B3) and 1/1 (B2) |
 | `scripts/cost_fp.py` | GMACs of the full-precision models |
 | `scripts/analyze.py` | E5 (temperature, conformal threshold, inherited vs. recalibrated) and every table and figure |
+| `scripts/explain.py` | Post-hoc explainability: Grad-CAM of p(TZ3), deletion faithfulness, map stability under E3a quantization (`explain/`) |
 | `notebooks/colab_driver.ipynb` | Runs everything on a Colab GPU, keeping runs on Google Drive |
 | `splits/` | Frozen `train/valA/valB/test.csv` — never regenerate |
 | `runs/`, `quant/` | One folder per run: `config.yaml`, `preds_{valA,valB,test}.csv`, `model.pt`, `summary.json` / `cost.json` |
@@ -34,6 +35,7 @@ python scripts/e4_binary.py bhvit_fp
 python scripts/e4_binary.py bhvit_bin               # teacher = best R3 seed
 python scripts/cost_fp.py
 python scripts/analyze.py
+python scripts/explain.py                           # after E2/E3a; Val-B by default
 ```
 
 Every script is resumable: finished runs (those with prediction files) are skipped.
