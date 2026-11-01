@@ -38,12 +38,12 @@ All experiments use 8,188 MobileODT cervix images in your published cluster spli
 | Split | Images | TZ1 | TZ2 | TZ3 | Used for |
 | --- | --- | --- | --- | --- | --- |
 | Train | 6,505 | 1,169 | 3,474 | 1,862 | Training, probe fitting, INT8 calibration |
-| Val-A | \~415 | \~73 | \~219 | \~123 | Model selection, early stopping, temperature scaling |
-| Val-B | \~416 | \~74 | \~219 | \~123 | Referral threshold only |
+| Val-A | 416 | 74 | 219 | 123 | Model selection, early stopping, temperature scaling |
+| Val-B | 415 | 73 | 219 | 123 | Referral threshold only |
 | Test | 852 | 199 | 378 | 275 | Final evaluation, once per final model |
 | **Total** | **8,188** | **1,515** | **4,290** | **2,383** |  |
 
-Validation came from 20 of 100 HSV-histogram K-means clusters (k = 100, seed 1312); Test is the official set, unchanged.
+Validation came from 20 of 100 HSV-histogram K-means clusters (k = 100, seed 1312); Test is the official set, unchanged. Val-A/Val-B counts are the frozen split committed on 2026-11-01 (option 2 below).
 
 **Dividing validation**
 
