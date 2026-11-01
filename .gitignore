@@ -1,0 +1,10 @@
+data/
+features/
+.venv/
+__pycache__/
+*.pt
+*.onnx
+runs/**/model.pt
+external/
+.DS_Store
+*.pth
