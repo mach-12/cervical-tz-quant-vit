@@ -115,7 +115,7 @@ def full_protocol(model_key, seeds, workers):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", required=True, choices=list(MODELS))
+    ap.add_argument("--model", required=True, choices=[k for k in MODELS if "init" not in MODELS[k]])
     ap.add_argument("--lr", type=float)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--seeds", type=int, nargs="+")

@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch  # noqa: E402
 
-from tzq.config import PARENTS, QUANT_DIR, RUNS_DIR  # noqa: E402
+from tzq.config import QUANT_DIR, QUANT_PARENTS, RUNS_DIR  # noqa: E402
 from tzq.data import eval_transform, make_loader  # noqa: E402
 from tzq.metrics import t1_auroc, tz3_score  # noqa: E402
 from tzq.models import build_classifier  # noqa: E402
@@ -19,7 +19,7 @@ from tzq.utils import device, predict_logits, save_json, write_preds  # noqa: E4
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--models", nargs="+", default=PARENTS)
+    ap.add_argument("--models", nargs="+", default=QUANT_PARENTS)
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     ap.add_argument("--bits", type=int, nargs="+", default=[8, 4, 2, 1])
     ap.add_argument("--workers", type=int, default=4)

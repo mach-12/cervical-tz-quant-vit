@@ -21,7 +21,7 @@ from onnxruntime.quantization import (CalibrationDataReader, CalibrationMethod, 
                                       QuantType, quantize_static)
 from onnxruntime.quantization.shape_inference import quant_pre_process  # noqa: E402
 
-from tzq.config import PARENTS, QUANT_DIR, RUNS_DIR  # noqa: E402
+from tzq.config import QUANT_DIR, QUANT_PARENTS, RUNS_DIR  # noqa: E402
 from tzq.data import CervixDataset, eval_transform, make_loader  # noqa: E402
 from tzq.metrics import t1_auroc, tz3_score  # noqa: E402
 from tzq.models import build_classifier  # noqa: E402
@@ -147,8 +147,7 @@ def one(key, seed, measure_latency):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--models", nargs="+", default=["deit_s", "mnv4_m", "tinyvit_11m", "dinov3_b"],
-                    choices=PARENTS)
+    ap.add_argument("--models", nargs="+", default=QUANT_PARENTS, choices=QUANT_PARENTS)
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
     a = ap.parse_args()
     for key in a.models:

@@ -240,6 +240,25 @@ P(\text{eligible} \mid \text{TZ3}) = P(s_{\text{new}} < s_{(k)}) \le \frac{k}{m+
 
 **Expected pattern to test:** the inherited regime misses more TZ3 cases as bit width falls, and recalibration brings the miss rate back under α at some cost in eligibility. If that holds, the conclusion is that compressed models must be recalibrated, not only re-validated for accuracy.
 
+## E6: Ordinal head on top of R3 (added after the protocol was fixed)
+
+Added on 2026-11-01, after E2 finished and before any Test result was examined; selection stays on Val-A only, and the paper reports E6 as a post-protocol addition.
+
+**Hypothesis.** TZ types are ordered (the squamocolumnar junction is fully, partly or not visible), and the referral decision uses one score. A rank-consistent ordinal head, $P(\mathrm{TZ}\ge k+1 \mid x) = \sigma(f(x) - b_k)$ with $b_1 < b_2$, makes $p(\mathrm{TZ3}) = \sigma(f - b_2)$ monotone in a single score $f$. Expected effects: (i) higher T1 AUROC, because every image informs both thresholds and TZ1-as-TZ3 errors cost more than TZ2-as-TZ3; (ii) a TZ3 score that drifts less under weight quantization, so the inherited referral threshold holds to lower bit widths.
+
+**Arms** (`scripts/e6_r3_ordinal.py`; one run per R3 seed, paired):
+
+| Arm | Head | Input | Role |
+| --- | --- | --- | --- |
+| R3 | softmax | 224 | E2 parent |
+| R3-C `dinov3_b_cont` | softmax (R3's) | 224 | control for the extra training |
+| R3-O `dinov3_b_ord` | ordinal | 224 | the modification |
+| R3-O448 `dinov3_b_ord448` | ordinal | 448 | optional; adds resolution (DINOv3 uses RoPE, so the 224 px weights load unchanged) |
+
+**Recipe (identical for every arm).** Initialise from `runs/E2_dinov3_b_fp32_s<seed>/model.pt`. LP-FT: refit the head on frozen, unaugmented Train features (full-batch Adam, 300 steps, lr 1e-3; ordinal thresholds start at the Train cumulative log-odds), then fine-tune everything for 12 epochs at 0.3 × R3's chosen learning rate, layer decay 0.75, weight decay 0.05, warm-up 1 epoch, patience 5, batch 16 × 2 accumulation, the E2 augmentation. Losses: softmax arms use the E2 loss; the ordinal arm uses class-weighted binary cross-entropy on the cumulative targets 1[y > k] with label smoothing 0.1. The ordinal head outputs log class probabilities, so temperature scaling (which becomes power scaling of the probabilities), E3a/E3b, E5 and Grad-CAM run unchanged; the head stays full precision in E3a like every classifier.
+
+**Analysis.** Paired bootstrap differences on the same Test resamples (seeds averaged inside each resample): R3-C − R3 (effect of extra training), R3-O − R3-C (effect of the ordinal head; the primary E6 comparison), R3-O448 − R3-O (effect of resolution). Reported for T1 AUROC, sensitivity at specificity 0.80 and the recalibrated missed-TZ3 rate; plus the inherited missed-TZ3 rate of each arm at 8- and 4-bit weights (`analysis/table_e6.tex`). R3-C and R3-O are quantization parents in E3a/E3b and appear in Fig. 1.
+
 ## Explainability (post hoc, added after the protocol was fixed)
 
 Added on 2026-11-01. Explanations are computed from saved models only; they change no training, selection or threshold, and no Test prediction. *Implementation (`scripts/explain.py`, outputs in `explain/`):*

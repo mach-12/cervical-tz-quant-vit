@@ -28,7 +28,15 @@ MODELS = {
     "dinov3_b": dict(id="R3", kind="timm", name="vit_base_patch16_dinov3.lvd1689m", transformer=True, size=224),
     "mnv4_m": dict(id="R4", kind="timm", name="mobilenetv4_conv_medium.e500_r256_in1k", transformer=False),
     "tinyvit_11m": dict(id="R5", kind="timm", name="tiny_vit_11m_224.dist_in22k_ft_in1k", transformer=True, size=224),
+    # E6: modifications on top of R3, each initialised from the R3 checkpoint of the same seed.
+    "dinov3_b_cont": dict(id="R3-C", kind="timm", name="vit_base_patch16_dinov3.lvd1689m", transformer=True,
+                          size=224, init="dinov3_b"),
+    "dinov3_b_ord": dict(id="R3-O", kind="timm", name="vit_base_patch16_dinov3.lvd1689m", transformer=True,
+                         size=224, init="dinov3_b", head="ordinal"),
+    "dinov3_b_ord448": dict(id="R3-O448", kind="timm", name="vit_base_patch16_dinov3.lvd1689m", transformer=True,
+                            size=448, img_size=448, init="dinov3_b", head="ordinal"),
 }
+E6_VARIANTS = ["dinov3_b_cont", "dinov3_b_ord", "dinov3_b_ord448"]
 
 LR_GRID = {
     "resnet50": [1e-4],
@@ -46,3 +54,5 @@ PROBES = {
 }
 
 PARENTS = ["deit_s", "dinov3_b", "mnv4_m", "tinyvit_11m"]
+# Quantization parents including the E6 variants (E3a, E3b and explain.py skip any that are not trained).
+QUANT_PARENTS = PARENTS + E6_VARIANTS

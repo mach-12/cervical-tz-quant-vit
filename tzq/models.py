@@ -4,13 +4,18 @@ import torch
 import torch.nn as nn
 
 from .config import MODELS, PROBES
+from .ordinal import OrdinalHead
 
 
 def build_classifier(key: str, pretrained: bool = True):
     """Return (model, size, mean, std) for a fine-tuned model in MODELS."""
     cfg = MODELS[key]
     kwargs = dict(drop_path_rate=0.1) if cfg["transformer"] else {}
+    if "img_size" in cfg:  # DINOv3 uses RoPE, so the 224 px weights load unchanged at another size
+        kwargs["img_size"] = cfg["img_size"]
     model = timm.create_model(cfg["name"], pretrained=pretrained, num_classes=3, **kwargs)
+    if cfg.get("head") == "ordinal":
+        model.head = OrdinalHead(model.get_classifier().in_features)
     dc = timm.data.resolve_model_data_config(model)
     size = cfg.get("size") or dc["input_size"][-1]
     return model, size, dc["mean"], dc["std"]

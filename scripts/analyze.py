@@ -34,7 +34,12 @@ NAMES = {
     "dinov3_b": ("R3", "DINOv3-B fine-tuned"), "mnv4_m": ("R4", "MobileNetV4-Conv-M"),
     "tinyvit_11m": ("R5", "TinyViT-11M"), "binatt_deit_s": ("B1", "BinaryAttention (DeiT-S)"),
     "bhvit_tiny_fp": ("B3", "BHViT-Tiny"), "bhvit_tiny_bin": ("B2", "BHViT-Tiny"),
+    "dinov3_b_cont": ("R3-C", "DINOv3-B, continued (control)"), "dinov3_b_ord": ("R3-O", "DINOv3-B + ordinal head"),
+    "dinov3_b_ord448": ("R3-O448", "DINOv3-B + ordinal, 448 px"),
 }
+# E6: each modification is compared with its control on the same bootstrap resamples (paired by seed).
+CONTROLS = {"dinov3_b_cont": "dinov3_b", "dinov3_b_ord": "dinov3_b_cont", "dinov3_b_ord448": "dinov3_b_ord"}
+E6_ORDER = ["dinov3_b", "dinov3_b_cont", "dinov3_b_ord", "dinov3_b_ord448"]
 RUN_RE = re.compile(r"^(E\d[ab]?)_(.+)_(fp32|w\d|int8|bin|qk1)_s(\d+)$")
 
 
@@ -168,6 +173,12 @@ def main(n_boot):
                 row["d_auroc"] = row["auroc"] - per_run[per_run.run.isin([x.run for x in groups[pg]])].auroc.mean()
                 row["d_auroc_lo"], row["d_auroc_hi"] = np.percentile(diff, [2.5, 97.5])
                 row["non_inferior"] = bool(row["d_auroc_lo"] > NI_MARGIN)
+        ctrl = (g[0], CONTROLS.get(g[1]), g[2]) if g[1] in CONTROLS else None
+        if ctrl in boot_vals:
+            for k in ["auroc", "sens80", f"missed_{ALPHAS[0]}_recal"]:
+                diff = boot_vals[g][k] - boot_vals[ctrl][k]
+                row[f"dctrl_{k}"] = diff.mean()
+                row[f"dctrl_{k}_lo"], row[f"dctrl_{k}_hi"] = np.percentile(diff, [2.5, 97.5])
         summary.append(row)
     summary = pd.DataFrame(summary)
     summary.to_csv(ANALYSIS_DIR / "summary.csv", index=False)
@@ -177,6 +188,7 @@ def main(n_boot):
     fig2(summary)
     table2(summary, per_run, y_test)
     fig3_confusion(per_run, cal)
+    table_e6(summary)
     print("wrote", ANALYSIS_DIR)
 
 
@@ -187,6 +199,8 @@ def fmt(v, nd=3):
 TABLE1_ORDER = [("E1", "hsv", "fp32"), ("E1", "dinov2_b", "fp32"), ("E1", "dinov3_b", "fp32"),
                 ("E1", "medsiglip", "fp32"), ("E2", "resnet50", "fp32"), ("E2", "deit_s", "fp32"),
                 ("E3b", "deit_s", "int8"), ("E2", "dinov3_b", "fp32"), ("E3b", "dinov3_b", "int8"),
+                ("E2", "dinov3_b_cont", "fp32"), ("E2", "dinov3_b_ord", "fp32"), ("E3b", "dinov3_b_ord", "int8"),
+                ("E2", "dinov3_b_ord448", "fp32"),
                 ("E2", "mnv4_m", "fp32"), ("E3b", "mnv4_m", "int8"), ("E2", "tinyvit_11m", "fp32"),
                 ("E3b", "tinyvit_11m", "int8"), ("E4", "binatt_deit_s", "qk1"), ("E4", "bhvit_tiny_fp", "fp32"),
                 ("E4", "bhvit_tiny_bin", "bin")]
@@ -213,7 +227,7 @@ def write_table1(summary):
         if r.empty:
             continue
         r = r.iloc[0]
-        b = "baseline" if r.id[0] in "CP" else r.id[0]
+        b = "baseline" if r.id[0] in "CP" else r.id[0] + ("6" if "-" in r.id else "")
         if block is not None and b != block:
             tex.append("\\midrule")
         block = b
@@ -234,9 +248,12 @@ def bits_series(summary, model):
     return pts
 
 
+FIG_MODELS = ["deit_s", "dinov3_b", "mnv4_m", "tinyvit_11m", "dinov3_b_cont", "dinov3_b_ord"]
+
+
 def fig1(summary):
     fig, ax = plt.subplots(figsize=(3.5, 2.6), dpi=200)
-    for model in ["deit_s", "dinov3_b", "mnv4_m", "tinyvit_11m"]:
+    for model in FIG_MODELS:
         pts = bits_series(summary, model)
         if not pts:
             continue
@@ -264,7 +281,7 @@ def fig1(summary):
 
 def fig2(summary, alpha=0.10):
     fig, ax = plt.subplots(figsize=(3.5, 2.6), dpi=200)
-    for model in ["deit_s", "dinov3_b", "mnv4_m", "tinyvit_11m"]:
+    for model in FIG_MODELS:
         pts = bits_series(summary, model)
         if not pts:
             continue
@@ -361,6 +378,29 @@ def fig3_confusion(per_run, cal):
     fig.tight_layout(pad=0.3)
     for ext in ("png", "pdf"):
         fig.savefig(ANALYSIS_DIR / f"fig3_confusion.{ext}")
+
+
+def table_e6(summary, alpha=ALPHAS[0]):
+    """E6 rows for paper.tex: R3 and its modifications; deltas vs. each arm's control (paired bootstrap);
+    inherited missed-TZ3 rate after 8- and 4-bit weight quantization."""
+    tex = []
+    for model in E6_ORDER:
+        r = summary[(summary.exp == "E2") & (summary.model == model) & (summary.bits == "fp32")]
+        if r.empty:
+            continue
+        r = r.iloc[0]
+        cells = [f"{r.id}", f"{r.auroc:.3f} [{r.auroc_lo:.3f}, {r.auroc_hi:.3f}]"]
+        if not pd.isna(r.get("dctrl_auroc", np.nan)):
+            cells.append(f"{r.dctrl_auroc:+.3f} [{r.dctrl_auroc_lo:+.3f}, {r.dctrl_auroc_hi:+.3f}]")
+        else:
+            cells.append("--")
+        cells.append(fmt(r.sens80))
+        for bits in ("w8", "w4"):
+            q = summary[(summary.exp == "E3a") & (summary.model == model) & (summary.bits == bits)]
+            v = q.iloc[0].get(f"missed_{alpha}_inh", np.nan) if not q.empty else np.nan
+            cells.append("--" if pd.isna(v) else f"{100 * v:.1f}")
+        tex.append(" & ".join(cells) + " \\\\")
+    (ANALYSIS_DIR / "table_e6.tex").write_text("\n".join(tex) + "\n")
 
 
 def load_valA_auroc(r):
