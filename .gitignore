@@ -12,3 +12,6 @@ runs/
 quant/
 analysis/
 explain/
+out/
+paper_files/
+paper_files.zip
