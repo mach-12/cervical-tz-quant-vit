@@ -17,6 +17,7 @@ Outputs go to explain/ next to runs/ (on Google Drive in Colab):
   panels/cases_<model>.png      seed 0, full precision: detected TZ3, missed TZ3, false alarms
   panels/models.png             the same images across all models (full precision, seed 0)
   panels/quant_<model>.png      the same images across bit widths (seed 0)
+  paper_gradcam.pdf, table_explain.tex   compact versions for paper.tex
 E4 binary models are not covered (their code lives in the third-party repos).
 """
 import argparse
@@ -37,7 +38,7 @@ from PIL import Image  # noqa: E402
 
 from tzq.config import EXPLAIN_DIR, MODELS, PARENTS, RUNS_DIR, TZ3  # noqa: E402
 from tzq.data import CACHE_DIR, eval_transform, load_split, make_loader  # noqa: E402
-from tzq.metrics import fit_temperature, spec_threshold, tz3_score  # noqa: E402
+from tzq.metrics import fit_temperature, spec_threshold, t1_auroc, tz3_score  # noqa: E402
 from tzq.models import build_classifier  # noqa: E402
 from tzq.quant import quantize_model  # noqa: E402
 from tzq.utils import device, log_test_access, logits_of, read_preds  # noqa: E402
@@ -348,6 +349,63 @@ def panels(res, split, n=4):
              f"{NAMES[key]}, seed 0: Grad-CAM of p(TZ3) across weight bit widths ({split})")
 
 
+def paper_figure(res, split):
+    """One full-width figure: 3 images x (R1-R5 at FP32, then the best parent at 8/4/2/1 bits), seed 0.
+
+    Images, scored by the best parent (Val-A AUROC): its highest- and lowest-scoring TZ3 (labelled
+    detected or missed at its specificity-0.80 cut) and its lowest-scoring TZ1/2.
+    """
+    fp = [k for k in ORDER if (k, "fp32", 0) in res]
+    parents = [k for k in PARENTS if (k, "fp32", 0) in res]
+    if not parents:
+        return
+    va = {}
+    for k in parents:
+        pa = read_preds(RUNS_DIR / f"E2_{k}_fp32_s0", "valA")
+        va[k] = t1_auroc(pa.label, tz3_score(logits_of(pa)))
+    best = max(va, key=va.get)
+    r = res[(best, "fp32", 0)]
+    T, cut = cut_and_T(best)
+    s, y = tz3_score(r["logits"], T), r["label"]
+    tz, neg = np.flatnonzero(y == TZ3), np.flatnonzero(y != TZ3)
+    picks = [(i, f"TZ3, {'detected' if s[i] > cut else 'missed'}") for i in (tz[np.argmax(s[tz])], tz[np.argmin(s[tz])])]
+    i = neg[np.argmin(s[neg])]
+    picks = [(n, i) for i, n in picks] + [(f"TZ{y[i] + 1}", i)]
+    cols = [(k, "fp32") for k in fp] + [(best, t) for t in BIT_ORDER[1:] if (best, t, 0) in res]
+    heads = [NAMES[k].split()[0] + (" FP32" if t == "fp32" else f" W{t[1:]}") for k, t in cols]
+    fig, axes = plt.subplots(len(picks), len(cols) + 1, figsize=(7.16, 0.68 * len(picks) + 0.25), squeeze=False)
+    for i, (name, ix) in enumerate(picks):
+        iid = r["image_id"][ix]
+        img = show(split, [iid], 224)[0]
+        axes[i, 0].imshow(img)
+        axes[i, 0].set_ylabel(name, fontsize=6)
+        axes[i, 0].set_xticks([])
+        axes[i, 0].set_yticks([])
+        for j, (k, t) in enumerate(cols, 1):
+            rr = res[(k, t, 0)]
+            jx = int(np.flatnonzero(rr["image_id"] == iid)[0])
+            overlay(axes[i, j], img, rr["cam"][jx], f"{heads[j - 1]}\n" if i == 0 else "")
+    for ax in axes[0]:
+        ax.title.set_fontsize(6)
+    fig.subplots_adjust(left=0.03, right=0.995, top=0.88, bottom=0.01, wspace=0.04, hspace=0.06)
+    for ext in ("png", "pdf"):
+        fig.savefig(EXPLAIN_DIR / f"paper_gradcam.{ext}", dpi=300)
+    plt.close(fig)
+
+
+def write_tex(df):
+    """Rows for paper.tex: deletion ratio at FP32 and Spearman vs. FP32 at 8/4/2/1 bits, mean over seeds."""
+    rows = []
+    for key in [k for k in ORDER if k in set(df.model)]:
+        d = df[df.model == key].groupby("bits")
+        cells = [f"{d.deletion_ratio.mean()['fp32']:.2f}" if "fp32" in d.groups else "--"]
+        for t in BIT_ORDER[1:]:
+            v = d.spearman_vs_fp32.mean().get(t, np.nan) if t in d.groups else np.nan
+            cells.append("--" if np.isnan(v) else f"{v:.2f}")
+        rows.append(f"{NAMES[key]} & " + " & ".join(cells) + " \\\\")
+    (EXPLAIN_DIR / "table_explain.tex").write_text("\n".join(rows) + "\n")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="+", default=ORDER, choices=ORDER)
@@ -368,4 +426,6 @@ if __name__ == "__main__":
     write_table(df, EXPLAIN_DIR / "table_explain.md")
     fig_stability(df)
     panels(res, a.split)
+    paper_figure(res, a.split)
+    write_tex(df)
     print((EXPLAIN_DIR / "table_explain.md").read_text())

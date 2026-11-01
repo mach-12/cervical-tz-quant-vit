@@ -176,6 +176,7 @@ def main(n_boot):
     fig1(summary)
     fig2(summary)
     table2(summary, per_run, y_test)
+    fig3_confusion(per_run, cal)
     print("wrote", ANALYSIS_DIR)
 
 
@@ -204,6 +205,23 @@ def write_table1(summary):
                      f"{r.auroc:.3f} [{r.auroc_lo:.3f}, {r.auroc_hi:.3f}]{sd} | {fmt(r.sens80)} | "
                      f"{fmt(r.ece)} (raw {fmt(r.ece_raw)}) | {fmt(r.f1)} | {fmt(r.cpu_ms, 1)} |")
     (ANALYSIS_DIR / "table1.md").write_text("\n".join(lines) + "\n")
+
+    # Rows for paper.tex (\input inside its tabular); a rule before each block of models.
+    tex, block = [], None
+    for g in TABLE1_ORDER:
+        r = summary[(summary.exp == g[0]) & (summary.model == g[1]) & (summary.bits == g[2])]
+        if r.empty:
+            continue
+        r = r.iloc[0]
+        b = "baseline" if r.id[0] in "CP" else r.id[0]
+        if block is not None and b != block:
+            tex.append("\\midrule")
+        block = b
+        sd = f"$\\pm${r.auroc_sd:.3f}" if not pd.isna(r.auroc_sd) else ""
+        bits = r.bits_label.replace(", QK 1-bit", "$^\\dagger$")
+        tex.append(f"{r.id} & {r['name']} & {bits} & {fmt(r.size_mb, 1)} & {r.auroc:.3f} [{r.auroc_lo:.3f}, "
+                   f"{r.auroc_hi:.3f}]{sd} & {fmt(r.sens80)} & {fmt(r.ece)} & {fmt(r.f1)} & {fmt(r.cpu_ms, 1)} \\\\")
+    (ANALYSIS_DIR / "table1.tex").write_text("\n".join(tex) + "\n")
 
 
 def bits_series(summary, model):
@@ -280,6 +298,7 @@ def table2(summary, per_run, y_test, alpha=0.10):
                 "INT8": per_run.bits == "int8",
                 "Binary": per_run.bits.isin(["bin", "qk1"])}
     lines = ["| Model | Regime | Eligible | of which TZ3 | Referred | of which TZ1/2 |", "|" + " --- |" * 6]
+    tex = []
     for fam, mask in families.items():
         sub = per_run[mask]
         if sub.empty:
@@ -293,8 +312,55 @@ def table2(summary, per_run, y_test, alpha=0.10):
             e_pos, e_neg = 1000 * prev * miss, 1000 * (1 - prev) * elig
             lines.append(f"| {fam}: {r['name']} {r.bits_label} | {'recalibrated' if regime == 'recal' else 'inherited'} | "
                          f"{e_pos + e_neg:.0f} | {e_pos:.0f} | {1000 - e_pos - e_neg:.0f} | {1000 * (1 - prev) - e_neg:.0f} |")
+            tex.append(f"{r['id']} {r.bits_label.split(',')[0]} & {'Recal.' if regime == 'recal' else 'Inher.'} & "
+                       f"{e_pos + e_neg:.0f} ({e_pos:.0f}) & {1000 - e_pos - e_neg:.0f} ({1000 * (1 - prev) - e_neg:.0f}) "
+                       f"& {100 * miss:.1f} \\\\")
     (ANALYSIS_DIR / "table2.md").write_text(f"alpha = {alpha}, Test prevalence of TZ3 = {prev:.1%}\n\n"
                                             + "\n".join(lines) + "\n")
+    (ANALYSIS_DIR / "table2.tex").write_text("\n".join(tex) + "\n")
+
+
+def best_runs(per_run):
+    """Best full-precision, INT8 and binary group (Val-A AUROC, never Test); returns {family: [run ids]}."""
+    va = per_run.assign(valA_auroc=[load_valA_auroc(r) for r in per_run.itertuples()])
+    out = {}
+    for fam, mask in {"Full precision": va.bits == "fp32", "INT8": va.bits == "int8",
+                      "Binary": va.bits.isin(["bin", "qk1"])}.items():
+        sub = va[mask & (va.exp != "E1")]
+        if not sub.empty:
+            g = sub.groupby(["exp", "model", "bits"]).valA_auroc.mean().idxmax()
+            out[fam] = (g, sub[(sub.exp == g[0]) & (sub.model == g[1]) & (sub.bits == g[2])].run.tolist())
+    return out
+
+
+def fig3_confusion(per_run, cal):
+    """Test confusion matrices (argmax, i.e. the T2 three-class task), seeds pooled, rows normalised."""
+    best = best_runs(per_run)
+    if not best:
+        return
+    fig, axes = plt.subplots(1, len(best), figsize=(3.5, 1.45), dpi=200, squeeze=False)
+    for ax, (fam, (g, runs)) in zip(axes[0], best.items()):
+        cm = np.zeros((3, 3))
+        for run in runs:
+            y, z = cal[run]["Y"]["test"], cal[run]["Z"]["test"]
+            np.add.at(cm, (y, z.argmax(1)), 1)
+        cm /= len(runs)
+        rn = cm / cm.sum(1, keepdims=True)
+        ax.imshow(rn, cmap="Blues", vmin=0, vmax=1)
+        for i in range(3):
+            for j in range(3):
+                ax.text(j, i, f"{rn[i, j]:.2f}", ha="center", va="center", fontsize=5,
+                        color="white" if rn[i, j] > 0.6 else "black")
+        mid, name, b = label(*g)
+        ax.set_title(f"{mid} {b.split(',')[0]}", fontsize=6)
+        ax.set_xticks(range(3), ["T1", "T2", "T3"], fontsize=5)
+        ax.set_yticks(range(3), ["T1", "T2", "T3"], fontsize=5)
+        ax.set_xlabel("Predicted", fontsize=5)
+        if ax is axes[0, 0]:
+            ax.set_ylabel("True", fontsize=5)
+    fig.tight_layout(pad=0.3)
+    for ext in ("png", "pdf"):
+        fig.savefig(ANALYSIS_DIR / f"fig3_confusion.{ext}")
 
 
 def load_valA_auroc(r):
