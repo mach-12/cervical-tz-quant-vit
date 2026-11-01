@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tzq.config import ANALYSIS_DIR, EXPLAIN_DIR, ROOT  # noqa: E402
 
 FILES = [ANALYSIS_DIR / f for f in ("table1.tex", "table2.tex", "fig1_auroc_vs_bits.pdf",
-                                    "fig2_missed_vs_bits.pdf", "fig3_confusion.pdf")] + \
+                                    "fig2_missed_vs_bits.pdf", "fig3_confusion.pdf", "table_e6.tex")] + \
         [EXPLAIN_DIR / f for f in ("table_explain.tex", "paper_gradcam.pdf")]
 
 if __name__ == "__main__":
