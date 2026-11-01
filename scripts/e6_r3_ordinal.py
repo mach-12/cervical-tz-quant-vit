@@ -29,7 +29,7 @@ from tzq.data import eval_transform, load_split, make_loader, train_transform  #
 from tzq.models import build_classifier  # noqa: E402
 from tzq.ordinal import OrdinalHead, ordinal_loss  # noqa: E402
 from tzq.train import fit  # noqa: E402
-from tzq.utils import autocast, device, load_json, predict_logits, seed_all, write_preds  # noqa: E402
+from tzq.utils import autocast, device, finished, load_json, predict_logits, seed_all, write_preds  # noqa: E402
 
 EPOCHS, WARMUP, PATIENCE, WD, LR_FACTOR = 12, 1, 5, 0.05, 0.3
 LP_STEPS, LP_LR = 300, 1e-3
@@ -70,8 +70,8 @@ def run(variant, seed, workers):
         print("done already:", out.name)
         return
     parent = RUNS_DIR / f"E2_{MODELS[variant]['init']}_fp32_s{seed}"
-    if not (parent / "model.pt").exists():
-        print("missing parent", parent.name)
+    if not finished(parent):
+        print("parent not finished, skipped:", parent.name)
         return
     seed_all(seed)
     dev = device()

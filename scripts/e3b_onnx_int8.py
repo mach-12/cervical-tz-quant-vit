@@ -25,7 +25,7 @@ from tzq.config import QUANT_DIR, QUANT_PARENTS, RUNS_DIR  # noqa: E402
 from tzq.data import CervixDataset, eval_transform, make_loader  # noqa: E402
 from tzq.metrics import t1_auroc, tz3_score  # noqa: E402
 from tzq.models import build_classifier  # noqa: E402
-from tzq.utils import read_preds, logits_of, save_json, write_preds  # noqa: E402
+from tzq.utils import finished, logits_of, read_preds, save_json, stale, write_preds  # noqa: E402
 
 N_CALIB, MAX_DROP = 256, 0.02
 
@@ -98,8 +98,11 @@ def latency_ms(path, size, threads=4, warmup=50, n=200):
 def one(key, seed, measure_latency):
     parent = RUNS_DIR / f"E2_{key}_fp32_s{seed}"
     out = QUANT_DIR / f"E3b_{key}_int8_s{seed}"
-    if (out / "preds_test.csv").exists() or not (parent / "model.pt").exists():
+    if not finished(parent):
+        print("parent not finished, skipped:", parent.name)
         return
+    if (out / "preds_test.csv").exists() and not stale(out / "preds_test.csv", parent):
+        return  # done, from the parent's final checkpoint
     out.mkdir(parents=True, exist_ok=True)
     model, size, mean, std = build_classifier(key, pretrained=False)
     model.load_state_dict(torch.load(parent / "model.pt", map_location="cpu"))

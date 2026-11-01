@@ -87,3 +87,15 @@ def save_json(path: Path, obj):
 
 def load_json(path: Path):
     return json.loads(Path(path).read_text())
+
+
+def finished(run_dir: Path) -> bool:
+    """A training run is finished once its summary and Test predictions exist. model.pt alone is not enough:
+    it is rewritten during training whenever Val-A improves, so it also exists for interrupted runs."""
+    return (Path(run_dir) / "summary.json").exists() and (Path(run_dir) / "preds_test.csv").exists()
+
+
+def stale(result: Path, parent: Path) -> bool:
+    """True if `result` (a file) was computed from an older checkpoint than parent/model.pt."""
+    result, ckpt = Path(result), Path(parent) / "model.pt"
+    return result.exists() and ckpt.exists() and result.stat().st_mtime < ckpt.stat().st_mtime

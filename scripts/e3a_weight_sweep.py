@@ -15,7 +15,7 @@ from tzq.data import eval_transform, make_loader  # noqa: E402
 from tzq.metrics import t1_auroc, tz3_score  # noqa: E402
 from tzq.models import build_classifier  # noqa: E402
 from tzq.quant import quantize_model  # noqa: E402
-from tzq.utils import device, predict_logits, save_json, write_preds  # noqa: E402
+from tzq.utils import device, finished, predict_logits, save_json, stale, write_preds  # noqa: E402
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -28,14 +28,14 @@ if __name__ == "__main__":
     for key in a.models:
         for seed in a.seeds:
             parent = RUNS_DIR / f"E2_{key}_fp32_s{seed}"
-            if not (parent / "model.pt").exists():
-                print("missing parent", parent)
+            if not finished(parent):
+                print("parent not finished, skipped:", parent.name)
                 continue
             state = torch.load(parent / "model.pt", map_location="cpu")
             for bits in a.bits:
                 out = QUANT_DIR / f"E3a_{key}_w{bits}_s{seed}"
-                if (out / "preds_test.csv").exists():
-                    continue
+                if (out / "preds_test.csv").exists() and not stale(out / "preds_test.csv", parent):
+                    continue  # done, from the parent's final checkpoint
                 model, size, mean, std = build_classifier(key, pretrained=False)
                 model.load_state_dict(state)
                 cost = quantize_model(model, bits)

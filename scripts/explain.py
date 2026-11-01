@@ -41,7 +41,7 @@ from tzq.data import CACHE_DIR, eval_transform, load_split, make_loader  # noqa:
 from tzq.metrics import fit_temperature, spec_threshold, t1_auroc, tz3_score  # noqa: E402
 from tzq.models import build_classifier  # noqa: E402
 from tzq.quant import quantize_model  # noqa: E402
-from tzq.utils import device, log_test_access, logits_of, read_preds  # noqa: E402
+from tzq.utils import device, finished, log_test_access, logits_of, read_preds, stale  # noqa: E402
 
 FRACS = np.linspace(0, 1, 11)  # share of blocks deleted
 BLOCK = 16
@@ -128,14 +128,14 @@ def compute(a, dev):
     for key in a.models:
         for seed in a.seeds:
             parent = RUNS_DIR / f"E2_{key}_fp32_s{seed}"
-            if not (parent / "model.pt").exists():
-                print("missing parent", parent.name)
+            if not finished(parent):
+                print("parent not finished, skipped:", parent.name)
                 continue
             state = torch.load(parent / "model.pt", map_location="cpu")
             for bits in [32] + (a.bits if key in PARENTS else []):
                 tag = "fp32" if bits == 32 else f"w{bits}"
                 out = maps / f"{key}_{tag}_s{seed}_{a.split}.npz"
-                if out.exists():
+                if out.exists() and not stale(out, parent):
                     continue
                 if a.split == "test":
                     log_test_access(f"explain_{out.stem}")
