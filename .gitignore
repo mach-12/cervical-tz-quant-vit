@@ -8,3 +8,6 @@ runs/**/model.pt
 external/
 .DS_Store
 *.pth
+runs/
+quant/
+analysis/
