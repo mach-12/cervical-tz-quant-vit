@@ -7,6 +7,7 @@ Compressed variants are scored twice: inherited (parent's T and tau) and recalib
 import argparse
 import re
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -117,13 +118,23 @@ def label(exp, model, bits):
     return mid, name, b
 
 
+def log(msg, t0=[time.time()]):
+    print(f"[{time.time() - t0[0]:6.0f}s] {msg}", flush=True)
+
+
 def main(n_boot):
+    log(f"reading runs from {RUNS_DIR} and {QUANT_DIR}")
     runs = discover()
     if runs.empty:
         print("no complete runs found")
         return
+    log(f"{len(runs)} complete runs: " + ", ".join(f"{k} {v}" for k, v in runs.exp.value_counts().sort_index().items()))
     ANALYSIS_DIR.mkdir(exist_ok=True)
-    cal = {r.run: calibrate(r.dir) for r in runs.itertuples()}
+    cal = {}
+    for i, r in enumerate(runs.itertuples(), 1):
+        cal[r.run] = calibrate(r.dir)
+        if i % 20 == 0 or i == len(runs):
+            log(f"calibrated {i}/{len(runs)} runs")
     ref_ids = next(iter(cal.values()))["ids"]
     for k, c in cal.items():
         assert (c["ids"] == ref_ids).all(), f"{k}: test rows are not aligned"
@@ -140,18 +151,22 @@ def main(n_boot):
                             **size_and_latency(r)))
     per_run = pd.DataFrame(per_run)
     per_run.to_csv(ANALYSIS_DIR / "e5_per_run.csv", index=False)
+    log("wrote e5_per_run.csv")
 
     # Bootstrap per group (seeds averaged inside each resample), plus paired difference to the parent group.
     groups = defaultdict(list)
     for r in runs.itertuples():
         groups[group_key(r)].append(r)
     boot_vals = {}
-    for g, rs in groups.items():
+    log(f"bootstrap: {len(groups)} groups x {n_boot} resamples (the slow part)")
+    for gi, (g, rs) in enumerate(groups.items(), 1):
+        t = time.time()
         vals = []
         for idx in boots:
             ms = [test_metrics(cal[r.run], idx, cal.get(r.parent) if r.parent else None) for r in rs]
             vals.append({k: np.mean([m[k] for m in ms]) for k in ms[0]})
         boot_vals[g] = pd.DataFrame(vals)
+        log(f"  {gi}/{len(groups)} {'_'.join(g)} ({len(rs)} seeds, {time.time() - t:.0f}s)")
 
     summary = []
     for g, rs in groups.items():
@@ -181,13 +196,13 @@ def main(n_boot):
         summary.append(row)
     summary = pd.DataFrame(summary)
     summary.to_csv(ANALYSIS_DIR / "summary.csv", index=False)
+    log("wrote summary.csv")
 
-    write_table1(summary)
-    fig1(summary)
-    fig2(summary)
-    table2(summary, per_run, y_test)
-    fig3_confusion(per_run, cal)
-    table_e6(summary)
+    for name, f in [("table1", lambda: write_table1(summary)), ("fig1", lambda: fig1(summary)),
+                    ("fig2", lambda: fig2(summary)), ("table2", lambda: table2(summary, per_run, y_test)),
+                    ("fig3_confusion", lambda: fig3_confusion(per_run, cal)), ("table_e6", lambda: table_e6(summary))]:
+        f()
+        log(f"wrote {name}")
     print("wrote", ANALYSIS_DIR)
 
 
