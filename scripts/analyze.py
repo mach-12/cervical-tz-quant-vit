@@ -197,7 +197,9 @@ def fmt(v, nd=3):
 
 TABLE1_ORDER = [("E1", "hsv", "fp32"), ("E1", "dinov2_b", "fp32"), ("E1", "dinov3_b", "fp32"),
                 ("E1", "medsiglip", "fp32"), ("E2", "resnet50", "fp32"), ("E2", "deit_s", "fp32"),
-                ("E3b", "deit_s", "int8"), ("E2", "dinov3_b", "fp32"), ("E3b", "dinov3_b", "int8"),
+                ("E3b", "deit_s", "int8"), ("E3a", "deit_s", "w4"), ("E3a", "deit_s", "w2"), ("E3a", "deit_s", "w1"),
+                ("E2", "dinov3_b", "fp32"), ("E3b", "dinov3_b", "int8"),
+                ("E3a", "dinov3_b", "w4"), ("E3a", "dinov3_b", "w2"), ("E3a", "dinov3_b", "w1"),
                 ("E2", "dinov3_b_cont", "fp32"), ("E2", "dinov3_b_ord", "fp32"), ("E3b", "dinov3_b_ord", "int8"),
                 ("E2", "dinov3_b_ord448", "fp32"),
                 ("E2", "mnv4_m", "fp32"), ("E3b", "mnv4_m", "int8"), ("E2", "tinyvit_11m", "fp32"),
