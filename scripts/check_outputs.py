@@ -103,7 +103,9 @@ if __name__ == "__main__":
             parent = RUNS_DIR / f"E2_{m}_fp32_s{s}"
             if not finished(parent):
                 continue
-            check_quant(QUANT_DIR / f"E3b_{m}_int8_s{s}", parent, f"e3b_onnx_int8.py --models {m}", m in OPTIONAL)
+            # Table V uses simulated W8/W4 for the E6 arms, so their INT8 copies are optional.
+            check_quant(QUANT_DIR / f"E3b_{m}_int8_s{s}", parent, f"e3b_onnx_int8.py --models {m}",
+                        m in OPTIONAL or m in E6)
 
     print("\nE4 binarized attention")
     check_train(RUNS_DIR / "E4_binatt_deit_s_qk1_s0", "e4_binary.py binatt")
