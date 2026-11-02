@@ -4,6 +4,8 @@ If Val-A AUROC drops by more than 0.02, Percentile calibration, then INT8 on lin
 then dynamic INT8 on linear layers are tried; cost.json records every attempt and the one used.
 
     python scripts/e3b_onnx_int8.py --models deit_s mnv4_m tinyvit_11m dinov3_b
+    python scripts/e3b_onnx_int8.py --models dinov3_b --attempts MinMax_linear_only dynamic_linear_only
+        (skips the attempts known to collapse on DINOv3; Percentile is also very slow on ViT-B)
 Latency (batch 1, 4 threads, 50 warm-up, median of 200) is measured for seed 0, FP32 and INT8,
 on whatever machine runs this script; its CPU is recorded.
 """
@@ -122,7 +124,7 @@ def latency_ms(path, size, threads=4, warmup=50, n=200):
     return float(np.median(times))
 
 
-def one(key, seed, measure_latency):
+def one(key, seed, measure_latency, attempts=ATTEMPTS):
     parent = RUNS_DIR / f"E2_{key}_fp32_s{seed}"
     out = QUANT_DIR / f"E3b_{key}_int8_s{seed}"
     if not finished(parent):
@@ -144,7 +146,7 @@ def one(key, seed, measure_latency):
     parent_auc = t1_auroc(pa.label, tz3_score(logits_of(pa)))
 
     tried = {}
-    for attempt in ATTEMPTS:
+    for attempt in attempts:
         q = out / f"int8_{attempt.lower()}.onnx"
         try:
             quantize(pre, q, attempt, tf)
@@ -182,11 +184,12 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--models", nargs="+", default=QUANT_PARENTS, choices=QUANT_PARENTS)
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2])
+    ap.add_argument("--attempts", nargs="+", default=ATTEMPTS, choices=ATTEMPTS)
     a = ap.parse_args()
     for key in a.models:
         for seed in a.seeds:
             try:
-                one(key, seed, measure_latency=seed == 0)
+                one(key, seed, measure_latency=seed == 0, attempts=a.attempts)
             except Exception:
                 # Protocol: try R3 and record it if export fails.
                 (QUANT_DIR / f"E3b_{key}_int8_s{seed}").mkdir(parents=True, exist_ok=True)
