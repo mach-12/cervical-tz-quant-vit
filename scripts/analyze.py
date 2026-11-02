@@ -215,8 +215,6 @@ TABLE1_ORDER = [("E1", "hsv", "fp32"), ("E1", "dinov2_b", "fp32"), ("E1", "dinov
                 ("E3b", "deit_s", "int8"), ("E3a", "deit_s", "w4"), ("E3a", "deit_s", "w2"), ("E3a", "deit_s", "w1"),
                 ("E2", "dinov3_b", "fp32"), ("E3b", "dinov3_b", "int8"),
                 ("E3a", "dinov3_b", "w4"), ("E3a", "dinov3_b", "w2"), ("E3a", "dinov3_b", "w1"),
-                ("E2", "dinov3_b_cont", "fp32"), ("E2", "dinov3_b_ord", "fp32"), ("E3b", "dinov3_b_ord", "int8"),
-                ("E2", "dinov3_b_ord448", "fp32"),
                 ("E2", "mnv4_m", "fp32"), ("E3b", "mnv4_m", "int8"), ("E2", "tinyvit_11m", "fp32"),
                 ("E3b", "tinyvit_11m", "int8"), ("E4", "binatt_deit_s", "qk1")]
 
@@ -263,7 +261,8 @@ def bits_series(summary, model):
     return pts
 
 
-FIG_MODELS = ["deit_s", "dinov3_b", "mnv4_m", "tinyvit_11m", "dinov3_b_cont", "dinov3_b_ord"]
+# The E6 ordinal arms are reported only in table_e6 (dropped from the paper).
+FIG_MODELS = ["deit_s", "dinov3_b", "mnv4_m", "tinyvit_11m"]
 
 
 def fig1(summary):

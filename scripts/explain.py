@@ -36,7 +36,7 @@ import torch  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from tzq.config import EXPLAIN_DIR, MODELS, QUANT_PARENTS as PARENTS, RUNS_DIR, TZ3  # noqa: E402
+from tzq.config import E6_VARIANTS, EXPLAIN_DIR, MODELS, QUANT_PARENTS as PARENTS, RUNS_DIR, TZ3  # noqa: E402
 from tzq.data import CACHE_DIR, eval_transform, load_split, make_loader  # noqa: E402
 from tzq.metrics import fit_temperature, spec_threshold, t1_auroc, tz3_score  # noqa: E402
 from tzq.models import build_classifier  # noqa: E402
@@ -51,7 +51,7 @@ BIT_ORDER = ["fp32", "w8", "w4", "w2", "w1"]
 NAMES = {"resnet50": "R1 ResNet-50", "deit_s": "R2 DeiT-S", "dinov3_b": "R3 DINOv3-B",
          "mnv4_m": "R4 MobileNetV4-M", "tinyvit_11m": "R5 TinyViT-11M", "dinov3_b_cont": "R3-C DINOv3-B cont.",
          "dinov3_b_ord": "R3-O DINOv3-B ordinal", "dinov3_b_ord448": "R3-O448 DINOv3-B ordinal 448"}
-PAPER_FP = ["resnet50", "deit_s", "dinov3_b", "dinov3_b_ord", "mnv4_m", "tinyvit_11m"]  # columns of the paper figure
+PAPER_FP = ["resnet50", "deit_s", "dinov3_b", "mnv4_m", "tinyvit_11m"]  # columns of the paper figure
 
 
 def gradcam(model, x):
@@ -398,7 +398,7 @@ def paper_figure(res, split):
 def write_tex(df):
     """Rows for paper.tex: deletion ratio at FP32 and Spearman vs. FP32 at 8/4/2/1 bits, mean over seeds."""
     rows = []
-    for key in [k for k in ORDER if k in set(df.model)]:
+    for key in [k for k in ORDER if k in set(df.model) and k not in E6_VARIANTS]:  # E6 dropped from the paper
         d = df[df.model == key].groupby("bits")
         cells = [f"{d.deletion_ratio.mean()['fp32']:.2f}" if "fp32" in d.groups else "--"]
         for t in BIT_ORDER[1:]:
